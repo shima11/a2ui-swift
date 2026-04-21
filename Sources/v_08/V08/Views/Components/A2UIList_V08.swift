@@ -43,12 +43,26 @@ struct A2UIList_V08: View {
                             A2UIComponentView_V08(node: child, viewModel: viewModel)
                         }
                     }
+                    .frame(
+                        maxHeight: .infinity,
+                        alignment: Alignment(
+                            horizontal: .center,
+                            vertical: a2uiVerticalAlignment(props.alignment)
+                        )
+                    )
                 } else {
                     LazyVStack(alignment: a2uiHorizontalAlignment(props.alignment)) {
                         ForEach(node.children) { child in
                             A2UIComponentView_V08(node: child, viewModel: viewModel)
                         }
                     }
+                    .frame(
+                        maxWidth: .infinity,
+                        alignment: Alignment(
+                            horizontal: a2uiHorizontalAlignment(props.alignment),
+                            vertical: .center
+                        )
+                    )
                 }
             }
         }

@@ -45,12 +45,26 @@ struct A2UIList: View {
                             A2UIComponentView(node: child, surface: surface)
                         }
                     }
+                    .frame(
+                        maxHeight: .infinity,
+                        alignment: Alignment(
+                            horizontal: .center,
+                            vertical: a2uiVerticalAlignment(props.align?.rawValue)
+                        )
+                    )
                 } else {
                     LazyVStack(alignment: a2uiHorizontalAlignment(props.align?.rawValue), spacing: 0) {
                         ForEach(node.children) { child in
                             A2UIComponentView(node: child, surface: surface)
                         }
                     }
+                    .frame(
+                        maxWidth: .infinity,
+                        alignment: Alignment(
+                            horizontal: a2uiHorizontalAlignment(props.align?.rawValue),
+                            vertical: .center
+                        )
+                    )
                 }
             }
             .a2uiAccessibility(node.accessibility, dataContext: dc)
