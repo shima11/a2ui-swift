@@ -67,15 +67,18 @@ import A2UISwiftCore
 public struct A2UISurfaceView<Catalog: CustomComponentCatalog>: View {
     private let viewModel: SurfaceViewModel
     private let catalog: Catalog
+    private let contentPadding: EdgeInsets
     private let onAction: (@Sendable (ResolvedAction) -> Void)?
 
     public init(
         viewModel: SurfaceViewModel,
         catalog: Catalog,
+        contentPadding: EdgeInsets = EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16),
         onAction: (@Sendable (ResolvedAction) -> Void)? = nil
     ) {
         self.viewModel = viewModel
         self.catalog = catalog
+        self.contentPadding = contentPadding
         self.onAction = onAction
     }
 
@@ -83,7 +86,7 @@ public struct A2UISurfaceView<Catalog: CustomComponentCatalog>: View {
         if let rootNode = viewModel.componentTree {
             ScrollView {
                 A2UIComponentView(node: rootNode, surface: viewModel.surface)
-                    .padding()
+                    .padding(contentPadding)
             }
             .tint(viewModel.a2uiStyle.primaryColor)
             .environment(\.a2uiStyle, viewModel.a2uiStyle)
@@ -104,8 +107,9 @@ extension A2UISurfaceView where Catalog == EmptyCustomCatalog {
     /// ```
     public init(
         viewModel: SurfaceViewModel,
+        contentPadding: EdgeInsets = EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16),
         onAction: (@Sendable (ResolvedAction) -> Void)? = nil
     ) {
-        self.init(viewModel: viewModel, catalog: EmptyCustomCatalog(), onAction: onAction)
+        self.init(viewModel: viewModel, catalog: EmptyCustomCatalog(), contentPadding: contentPadding, onAction: onAction)
     }
 }
