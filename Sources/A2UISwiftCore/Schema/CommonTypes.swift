@@ -90,14 +90,7 @@ public enum Dynamic<T: LiteralDecodable & Sendable>: Codable, Sendable {
         } else if case .dictionary(let dict) = raw, let resolved = DynamicDictResolver.resolve(dict) {
             switch resolved {
             case .dataBinding(let path): self = .dataBinding(path: path)
-            case .functionCall(let fc):
-                guard Self.functionCallReturnTypeMatchesSchema(fc.returnType) else {
-                    throw DecodingError.dataCorrupted(.init(
-                        codingPath: decoder.codingPath,
-                        debugDescription: "FunctionCall returnType does not match Dynamic<\(T.self)> schema."
-                    ))
-                }
-                self = .functionCall(fc)
+            case .functionCall(let fc): self = .functionCall(fc)
             }
         } else {
             throw DecodingError.dataCorrupted(.init(
@@ -114,21 +107,6 @@ public enum Dynamic<T: LiteralDecodable & Sendable>: Codable, Sendable {
         case .dataBinding(let path): try container.encode(["path": path])
         case .functionCall(let fc): try container.encode(fc)
         }
-    }
-
-    /// Enforces typed Dynamic schema constraints for function-call return types.
-    /// Mirrors the JSON-schema intent:
-    /// - DynamicString: returnType is absent or "string"
-    /// - DynamicNumber: returnType is absent or "number"
-    /// - DynamicBoolean: returnType is absent or "boolean"
-    /// - DynamicStringList: returnType is absent or "array"
-    private static func functionCallReturnTypeMatchesSchema(_ returnType: FunctionCallReturnType?) -> Bool {
-        guard let returnType else { return true }
-        if T.self == String.self { return returnType == .string }
-        if T.self == Double.self { return returnType == .number }
-        if T.self == Bool.self { return returnType == .boolean }
-        if T.self == [String].self { return returnType == .array }
-        return true
     }
 }
 

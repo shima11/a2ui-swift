@@ -118,8 +118,8 @@ struct V09JSONSchemaValidationTests {
         try V09JSONSchemaValidation.validateServerToClientMessageList(list)
     }
 
-    @Test("MessageProcessor with basicCatalog rejects invalid Button component")
-    func processorRejectsInvalidButton() throws {
+    @Test("MessageProcessor with basicCatalog accepts Button missing catalog-required fields")
+    func processorAcceptsIncompleteButtonLikeWebCore() throws {
         let processor = MessageProcessor(catalogs: [basicCatalog])
         let surfaceErrors = processor.processMessages([
             createSurfaceForBasicCatalog(surfaceId: "s1"),
@@ -140,8 +140,9 @@ struct V09JSONSchemaValidationTests {
                 ]
             )),
         ])
-        #expect(errs.count == 1)
-        #expect(errs.first is A2uiValidationError)
+        #expect(errs.isEmpty)
+        let button = processor.model.getSurface("s1")?.componentsModel.get("b1")
+        #expect(button?.type == "Button")
     }
 
     @Test("MessageProcessor with basicCatalog accepts valid Text component")

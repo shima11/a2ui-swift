@@ -21,7 +21,7 @@ import Foundation
 /// Mirrors Flutter's `GenerationEvent` hierarchy (`TextEvent` / `A2uiMessageEvent`),
 /// expressed as a Swift enum for pattern-matching ergonomics.
 public enum ParsedEvent: Sendable {
-    /// A fully validated A2UI server-to-client message extracted from the stream.
+    /// A decoded A2UI server-to-client message (Codable only; same tolerance as Flutter/WebCore).
     case message(A2uiMessage)
     /// Plain text that is not part of any A2UI message (suitable for chat UI display).
     case text(String)
@@ -234,15 +234,6 @@ public final class A2UIStreamParser: Sendable {
         private func tryEmitA2uiMessage(_ dict: [String: Any]) {
             guard let data = try? JSONSerialization.data(withJSONObject: dict) else { return }
             let looksLikeA2ui = !Self.a2uiKeys.isDisjoint(with: dict.keys)
-            // SPEC v0.9 / renderer_guide: validate against `server_to_client.json` before decode → state.
-            if looksLikeA2ui {
-                do {
-                    try V09JSONSchemaValidation.validateServerToClientMessage(dict)
-                } catch {
-                    continuation.yield(.error(error))
-                    return
-                }
-            }
             do {
                 let message = try JSONDecoder().decode(A2uiMessage.self, from: data)
                 continuation.yield(.message(message))

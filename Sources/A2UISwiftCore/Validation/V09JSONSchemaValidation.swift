@@ -22,6 +22,9 @@ private enum V09SchemaDocumentId {
 /// Loads official v0.9 JSON Schemas from ``Bundle.module`` (`Resources/v0_9`) and validates
 /// payloads with [swift-dynamicjson](https://github.com/objecthub/swift-dynamicjson).
 ///
+/// Not used on the default render path (transport + ``MessageProcessor``); official Flutter/WebCore
+/// decode first. Call from tests, tooling, or an opt-in strict layer when you need spec validation.
+///
 /// Bundled `catalog.json` is derived from `basic_catalog.json` with `$id` / `catalogId` rewritten
 /// so `$ref: "catalog.json#/..."` from `server_to_client.json` resolves, per spec.
 public enum V09JSONSchemaValidation {
