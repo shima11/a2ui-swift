@@ -21,6 +21,21 @@ import AppKit
 
 // MARK: - Type coercion helpers (non-throwing)
 
+/// Encodes an AnyCodable value to a compact JSON string (no spaces).
+/// Used by formatString interpolation to serialize objects/arrays per the A2UI spec:
+///   "Objects/Arrays: Stringified as JSON to ensure consistency across different
+///    client implementations."  (a2ui_protocol.md §Type conversion)
+private func toJSONString(_ val: AnyCodable) -> String {
+    let encoder = JSONEncoder()
+    // .sortedKeys ensures deterministic output across platforms, matching the
+    // JS JSON.stringify() key ordering that other A2UI renderers produce.
+    encoder.outputFormatting = [.sortedKeys]
+    guard let data = try? encoder.encode(val),
+          let str = String(data: data, encoding: .utf8)
+    else { return "" }
+    return str
+}
+
 private func toDouble(_ val: AnyCodable?) -> Double? {
     guard let val = val else { return nil }
     switch val {
@@ -341,8 +356,9 @@ private func basicFormatString(_ name: String, _ args: [String: AnyCodable], _ c
             return n == n.rounded() && !n.isInfinite ? String(Int(n)) : String(n)
         case .some(.bool(let b)):   return b ? "true" : "false"
         case .some(.null), nil:     return ""
-        case .some(.array(let a)):  return a.map { $0.description }.joined(separator: ", ")
-        case .some(.dictionary):    return ""
+        // Spec §"formatString type conversion":
+        //   Objects/Arrays → stringified as JSON for cross-client consistency.
+        case .some(let compound):   return toJSONString(compound)
         }
     }
     return .string(resolved.joined())
@@ -432,12 +448,14 @@ private func basicFormatDate(_ name: String, _ args: [String: AnyCodable], _ con
     return .string(outputFormatter.string(from: parsedDate))
 }
 
+// WebCore `PluralizeImplementation`:
+//   const rule = new Intl.PluralRules('en-US').select(args.value);
+//   return String((args as Record<string, unknown>)[rule] ?? args.other ?? '');
 private func basicPluralize(_ name: String, _ args: [String: AnyCodable], _ context: DataContext) throws -> AnyCodable? {
-    let count = try coerceDouble(args["value"], argName: "value", funcName: name)
-    if count == 0, let val = args["zero"], let s = toString(val) { return .string(s) }
-    if count == 1, let val = args["one"],  let s = toString(val) { return .string(s) }
-    if let val = args["other"], let s = toString(val) { return .string(s) }
-    return .string("")
+    let value = try coerceDouble(args["value"], argName: "value", funcName: name)
+    _ = try coerceRequiredString(args["other"], argName: "other", funcName: name)
+    let rule = A2UIPluralRules(localeIdentifier: "en-US").select(value)
+    return .string(toString(args[rule]) ?? toString(args["other"]) ?? "")
 }
 
 private func basicOpenUrl(_ name: String, _ args: [String: AnyCodable], _ context: DataContext) throws -> AnyCodable? {

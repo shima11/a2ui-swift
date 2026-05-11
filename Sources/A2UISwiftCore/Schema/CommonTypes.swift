@@ -78,6 +78,7 @@ extension Array: LiteralDecodable where Element == String {
 /// 泛型动态值：字面量 T | 数据绑定 | 函数调用。
 /// 一份 Codable 实现覆盖 DynamicString / DynamicNumber / DynamicBoolean / DynamicStringList。
 public enum Dynamic<T: LiteralDecodable & Sendable>: Codable, Sendable {
+    
     case literal(T)
     case dataBinding(path: String)
     case functionCall(FunctionCall)
@@ -92,8 +93,10 @@ public enum Dynamic<T: LiteralDecodable & Sendable>: Codable, Sendable {
             case .functionCall(let fc): self = .functionCall(fc)
             }
         } else {
-            assertionFailure("A2UI: Dynamic<\(T.self)> received unexpected value: \(raw)")
-            self = .literal(T.defaultLiteral)
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "Dynamic<\(T.self)> received unexpected value: \(raw)"
+            ))
         }
     }
 

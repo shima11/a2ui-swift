@@ -21,7 +21,7 @@ import Foundation
 /// Mirrors Flutter's `GenerationEvent` hierarchy (`TextEvent` / `A2uiMessageEvent`),
 /// expressed as a Swift enum for pattern-matching ergonomics.
 public enum ParsedEvent: Sendable {
-    /// A fully validated A2UI server-to-client message extracted from the stream.
+    /// A decoded A2UI server-to-client message (Codable only; same tolerance as Flutter/WebCore).
     case message(A2uiMessage)
     /// Plain text that is not part of any A2UI message (suitable for chat UI display).
     case text(String)
@@ -233,14 +233,13 @@ public final class A2UIStreamParser: Sendable {
 
         private func tryEmitA2uiMessage(_ dict: [String: Any]) {
             guard let data = try? JSONSerialization.data(withJSONObject: dict) else { return }
+            let looksLikeA2ui = !Self.a2uiKeys.isDisjoint(with: dict.keys)
             do {
                 let message = try JSONDecoder().decode(A2uiMessage.self, from: data)
                 continuation.yield(.message(message))
             } catch {
-                // Swift Codable always throws DecodingError; we can't catch A2uiError directly.
-                // Use key-presence to distinguish "malformed A2UI message" (→ .error, stream continues)
-                // from "unrelated JSON object" (→ .text). Mirrors Flutter's two-branch catch.
-                if !Self.a2uiKeys.isDisjoint(with: dict.keys) {
+                // Swift Codable throws DecodingError; use key-presence like Flutter's two-branch catch.
+                if looksLikeA2ui {
                     continuation.yield(.error(error))
                 } else if let text = String(data: data, encoding: .utf8) {
                     continuation.yield(.text(text))
