@@ -49,7 +49,7 @@ struct A2UIList: View {
                         maxHeight: .infinity,
                         alignment: Alignment(
                             horizontal: .center,
-                            vertical: a2uiVerticalAlignment(props.align?.rawValue)
+                            vertical: a2uiVerticalAlignment(props.align)
                         )
                     )
                 } else {
@@ -61,7 +61,7 @@ struct A2UIList: View {
                     .frame(
                         maxWidth: .infinity,
                         alignment: Alignment(
-                            horizontal: a2uiHorizontalAlignment(props.align?.rawValue),
+                            horizontal: a2uiHorizontalAlignment(props.align),
                             vertical: .center
                         )
                     )
