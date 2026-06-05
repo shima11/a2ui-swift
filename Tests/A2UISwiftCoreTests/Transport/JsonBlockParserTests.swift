@@ -23,7 +23,7 @@ struct JsonBlockParserTests {
 
   @Test("stripJsonBlock preserves markdown link labels `[label](url)`")
   func stripJsonBlock_preservesMarkdownLinkLabel() {
-    let input = "詳しくはこちら [NNN NEWS ZIP（YouTube）](https://www.youtube.com/watch?v=x)"
+    let input = "See [Swift Forums (announcement)](https://forums.swift.org/) for details"
     #expect(JsonBlockParser.stripJsonBlock(input) == input)
   }
 
@@ -99,7 +99,7 @@ struct JsonBlockParserTests {
 
   @Test("parseJsonBlocks returns empty for plain text with markdown links")
   func parseJsonBlocks_emptyForPlainTextWithMarkdownLinks() {
-    let input = "詳しくは [ニッポン放送 YouTube](https://www.youtube.com/watch?v=x)"
+    let input = "See [Swift Forums (announcement)](https://forums.swift.org/) for details"
     let parsed = JsonBlockParser.parseJsonBlocks(input)
     #expect(parsed.isEmpty)
   }
