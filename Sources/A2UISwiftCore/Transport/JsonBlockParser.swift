@@ -77,7 +77,11 @@ public enum JsonBlockParser {
             in: result, range: range, withTemplate: ""
         )
 
-        // Remove bare balanced JSON blocks
+        // Remove bare balanced JSON blocks. Only strip when the balanced
+        // segment actually decodes as JSON — without this check, balanced
+        // bracket pairs that appear in prose (e.g. markdown links like
+        // `[label](url)`, where `[label]` is a syntactically balanced `[...]`
+        // but not JSON) would be eaten along with the JSON.
         let chars = Array(result)
         var stripped = ""
         var i = chars.startIndex
@@ -85,7 +89,9 @@ public enum JsonBlockParser {
             let ch = chars[i]
             if ch == "{" || ch == "[" {
                 let sub = String(chars[i...])
-                if let balanced = extractBalancedJson(sub) {
+                if let balanced = extractBalancedJson(sub),
+                   let data = balanced.data(using: .utf8),
+                   (try? JSONSerialization.jsonObject(with: data)) != nil {
                     i = chars.index(i, offsetBy: balanced.count)
                     continue
                 }
