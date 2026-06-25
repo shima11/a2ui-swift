@@ -67,31 +67,55 @@ import A2UISwiftCore
 public struct A2UISurfaceView<Catalog: CustomComponentCatalog>: View {
     private let viewModel: SurfaceViewModel
     private let catalog: Catalog
+    private let scrolls: Bool
     private let contentPadding: EdgeInsets
     private let onAction: (@Sendable (ResolvedAction) -> Void)?
 
+    /// - Parameters:
+    ///   - viewModel: The surface view model to render.
+    ///   - catalog:   Custom-component catalog for non-builtin component types.
+    ///   - scrolls:   When `true` (default) the surface is wrapped in its own
+    ///     `ScrollView` — the right choice for a full-screen surface. Set to
+    ///     `false` to render the bare component tree so the surface can be
+    ///     embedded inside a `List`, gallery card, or a stack of several
+    ///     surfaces without nested-scroll collapse.
+    ///   - contentPadding: Padding applied around the component tree. Defaults
+    ///     to 16pt on every edge.
+    ///   - onAction:  Receives resolved actions dispatched from components.
     public init(
         viewModel: SurfaceViewModel,
         catalog: Catalog,
+        scrolls: Bool = true,
         contentPadding: EdgeInsets = EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16),
         onAction: (@Sendable (ResolvedAction) -> Void)? = nil
     ) {
         self.viewModel = viewModel
         self.catalog = catalog
+        self.scrolls = scrolls
         self.contentPadding = contentPadding
         self.onAction = onAction
     }
 
     public var body: some View {
         if let rootNode = viewModel.componentTree {
+            surfaceContent(rootNode)
+                .tint(viewModel.a2uiStyle.primaryColor)
+                .environment(\.a2uiStyle, viewModel.a2uiStyle)
+                .environment(\.a2uiActionHandler, onAction)
+                .environment(\.a2uiCatalog, AnyCustomComponentCatalog(catalog))
+        }
+    }
+
+    @ViewBuilder
+    private func surfaceContent(_ rootNode: ComponentNode) -> some View {
+        if scrolls {
             ScrollView {
                 A2UIComponentView(node: rootNode, surface: viewModel.surface)
                     .padding(contentPadding)
             }
-            .tint(viewModel.a2uiStyle.primaryColor)
-            .environment(\.a2uiStyle, viewModel.a2uiStyle)
-            .environment(\.a2uiActionHandler, onAction)
-            .environment(\.a2uiCatalog, AnyCustomComponentCatalog(catalog))
+        } else {
+            A2UIComponentView(node: rootNode, surface: viewModel.surface)
+                .padding(contentPadding)
         }
     }
 }
@@ -107,9 +131,10 @@ extension A2UISurfaceView where Catalog == EmptyCustomCatalog {
     /// ```
     public init(
         viewModel: SurfaceViewModel,
+        scrolls: Bool = true,
         contentPadding: EdgeInsets = EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16),
         onAction: (@Sendable (ResolvedAction) -> Void)? = nil
     ) {
-        self.init(viewModel: viewModel, catalog: EmptyCustomCatalog(), contentPadding: contentPadding, onAction: onAction)
+        self.init(viewModel: viewModel, catalog: EmptyCustomCatalog(), scrolls: scrolls, contentPadding: contentPadding, onAction: onAction)
     }
 }

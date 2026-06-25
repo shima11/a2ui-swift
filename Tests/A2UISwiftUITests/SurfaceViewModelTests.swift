@@ -17,6 +17,7 @@
 
 import Testing
 import Foundation
+import Observation
 @testable import A2UISwiftCore
 @testable import A2UISwiftUI
 
@@ -169,6 +170,42 @@ struct SurfaceViewModelUpdateDataModelTests {
         #expect(vm.surface.dataModel.get("/user/name") == .string("Alice"))
     }
 
+    @Test("list template re-expands when data arrives after components")
+    func templateExpandsAfterData() throws {
+        let vm = makeViewModel()
+        try vm.processMessage(makeCreateSurface())
+        // Components first: a Column whose children are a data-driven template.
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .dictionary([
+                        "componentId": .string("item"),
+                        "path": .string("/items"),
+                    ])
+                ]),
+                RawComponent(id: "item", component: "Text", properties: [
+                    "text": .dictionary(["path": .string("text")])
+                ]),
+            ]
+        )))
+        // At this point data is empty → template resolves to 0 children.
+        #expect(vm.componentTree?.children.isEmpty == true)
+
+        // Data arrives after components (spec ordering) → template must re-expand.
+        try vm.processMessage(.updateDataModel(UpdateDataModelPayload(
+            surfaceId: "s1",
+            value: .dictionary([
+                "items": .array([
+                    .dictionary(["text": .string("one")]),
+                    .dictionary(["text": .string("two")]),
+                    .dictionary(["text": .string("three")]),
+                ])
+            ])
+        )))
+        #expect(vm.componentTree?.children.count == 3)
+    }
+
     @Test("updateDataModel at root path replaces data")
     func writesToRoot() throws {
         let vm = makeViewModel()
@@ -296,4 +333,348 @@ struct SurfaceViewModelBatchTests {
         #expect(errors.isEmpty)
         #expect(vm.componentTree != nil)
     }
+}
+
+// MARK: - Reconciliation behavior
+
+@Suite("SurfaceViewModel reconciliation")
+struct SurfaceViewModelReconcileTests {
+
+    /// Column → Text tree where Text is data-bound to /items/<index>/label, used
+    /// for testing template-driven list growth and shrinkage.
+    private func makeListSetup(_ items: [String]) throws -> SurfaceViewModel {
+        let vm = makeViewModel()
+        try vm.processMessage(makeCreateSurface())
+        // Seed the data model before components arrive so the template can resolve.
+        try vm.processMessage(.updateDataModel(UpdateDataModelPayload(
+            surfaceId: "s1",
+            path: "/items",
+            value: .array(items.map { .dictionary(["label": .string($0)]) })
+        )))
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .dictionary([
+                        "componentId": .string("row"),
+                        "path": .string("/items"),
+                    ])
+                ]),
+                RawComponent(id: "row", component: "Text", properties: [
+                    "text": .dictionary(["path": .string("label")])
+                ]),
+            ]
+        )))
+        return vm
+    }
+
+    @Test("no-op updateComponents preserves root identity and every child identity")
+    func noOpPreservesIdentity() throws {
+        let vm = makeViewModel()
+        try vm.processMessage(makeCreateSurface())
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .array([.string("a"), .string("b")])
+                ]),
+                RawComponent(id: "a", component: "Text", properties: ["text": .string("A")]),
+                RawComponent(id: "b", component: "Text", properties: ["text": .string("B")]),
+            ]
+        )))
+        let root = try #require(vm.componentTree)
+        let childA = try #require(root.children.first)
+        let childB = try #require(root.children.last)
+        let childrenArray = root.children
+
+        // Replay identical components.
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .array([.string("a"), .string("b")])
+                ]),
+                RawComponent(id: "a", component: "Text", properties: ["text": .string("A")]),
+                RawComponent(id: "b", component: "Text", properties: ["text": .string("B")]),
+            ]
+        )))
+
+        #expect(vm.componentTree === root)
+        #expect(root.children.first === childA)
+        #expect(root.children.last === childB)
+        // `children` itself must not have been reassigned (no-op invariant).
+        #expect(root.children.map(\.id) == childrenArray.map(\.id))
+    }
+
+    /// `reconcileNode` assigns `instance`/`weight`/`accessibility` unconditionally
+    /// and relies on the `@Observable` macro skipping notification for equal
+    /// `Equatable` values — a toolchain behavior (Swift 6.2+ / Xcode 26). This test
+    /// fails if the package is built with a toolchain that lacks that dedup.
+    @Test("no-op updateComponents does not notify observers of node fields")
+    func noOpDoesNotNotify() throws {
+        let payload = UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .array([.string("a"), .string("b")])
+                ]),
+                RawComponent(id: "a", component: "Text", properties: ["text": .string("A")]),
+                RawComponent(id: "b", component: "Text", properties: ["text": .string("B")]),
+            ]
+        )
+        let vm = makeViewModel()
+        try vm.processMessage(makeCreateSurface())
+        try vm.processMessage(.updateComponents(payload))
+        let root = try #require(vm.componentTree)
+        let childA = try #require(root.children.first)
+
+        let flag = ObservationFlag()
+        withObservationTracking {
+            _ = root.instance
+            _ = root.weight
+            _ = root.accessibility
+            _ = root.children
+            _ = childA.instance
+        } onChange: { [flag] in
+            flag.triggered = true
+        }
+
+        // Replay identical components — no tracked field may notify.
+        try vm.processMessage(.updateComponents(payload))
+        #expect(flag.triggered == false)
+    }
+
+    @Test("list growing by one item preserves the original children's identity")
+    func listGrowsPreservesIdentity() throws {
+        let vm = try makeListSetup(["x", "y", "z"])
+        let root = try #require(vm.componentTree)
+        #expect(root.children.count == 3)
+        let originals = root.children
+
+        // Append a 4th item — template should expand without rebuilding.
+        try vm.processMessage(.updateDataModel(UpdateDataModelPayload(
+            surfaceId: "s1",
+            path: "/items",
+            value: .array([
+                .dictionary(["label": .string("x")]),
+                .dictionary(["label": .string("y")]),
+                .dictionary(["label": .string("z")]),
+                .dictionary(["label": .string("w")]),
+            ])
+        )))
+        // updateDataModel alone doesn't rebuild structure; replay updateComponents
+        // to trigger the structural pass that previously would have nuked the tree.
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .dictionary([
+                        "componentId": .string("row"),
+                        "path": .string("/items"),
+                    ])
+                ]),
+                RawComponent(id: "row", component: "Text", properties: [
+                    "text": .dictionary(["path": .string("label")])
+                ]),
+            ]
+        )))
+
+        #expect(vm.componentTree === root)
+        #expect(root.children.count == 4)
+        for i in 0..<3 {
+            #expect(root.children[i] === originals[i])
+        }
+    }
+
+    @Test("list shrinking by one item preserves the surviving children's identity")
+    func listShrinksPreservesIdentity() throws {
+        let vm = try makeListSetup(["x", "y", "z", "w"])
+        let root = try #require(vm.componentTree)
+        #expect(root.children.count == 4)
+        let originals = root.children
+
+        try vm.processMessage(.updateDataModel(UpdateDataModelPayload(
+            surfaceId: "s1",
+            path: "/items",
+            value: .array([
+                .dictionary(["label": .string("x")]),
+                .dictionary(["label": .string("y")]),
+                .dictionary(["label": .string("z")]),
+            ])
+        )))
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .dictionary([
+                        "componentId": .string("row"),
+                        "path": .string("/items"),
+                    ])
+                ]),
+                RawComponent(id: "row", component: "Text", properties: [
+                    "text": .dictionary(["path": .string("label")])
+                ]),
+            ]
+        )))
+
+        #expect(vm.componentTree === root)
+        #expect(root.children.count == 3)
+        for i in 0..<3 {
+            #expect(root.children[i] === originals[i])
+        }
+    }
+
+    @Test("uiState survives list growth on a stateful child")
+    func uiStateSurvivesListGrowth() throws {
+        let vm = makeViewModel()
+        try vm.processMessage(makeCreateSurface())
+        // Seed data: list of two items, each becomes a Tabs.
+        try vm.processMessage(.updateDataModel(UpdateDataModelPayload(
+            surfaceId: "s1",
+            path: "/items",
+            value: .array([.dictionary([:]), .dictionary([:])])
+        )))
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .dictionary([
+                        "componentId": .string("tabs"),
+                        "path": .string("/items"),
+                    ])
+                ]),
+                RawComponent(id: "tabs", component: "Tabs", properties: [
+                    "tabs": .array([])
+                ]),
+            ]
+        )))
+        let root = try #require(vm.componentTree)
+        #expect(root.children.count == 2)
+        let firstTabs = root.children[0]
+        let firstUIState = try #require(firstTabs.uiState)
+        let firstUIStateId = ObjectIdentifier(firstUIState as AnyObject)
+
+        // Grow the list.
+        try vm.processMessage(.updateDataModel(UpdateDataModelPayload(
+            surfaceId: "s1",
+            path: "/items",
+            value: .array([.dictionary([:]), .dictionary([:]), .dictionary([:])])
+        )))
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .dictionary([
+                        "componentId": .string("tabs"),
+                        "path": .string("/items"),
+                    ])
+                ]),
+                RawComponent(id: "tabs", component: "Tabs", properties: [
+                    "tabs": .array([])
+                ]),
+            ]
+        )))
+
+        #expect(root.children.count == 3)
+        let firstAfter = try #require(root.children.first)
+        #expect(firstAfter === firstTabs)
+        let firstUIStateAfter = try #require(firstAfter.uiState)
+        #expect(ObjectIdentifier(firstUIStateAfter as AnyObject) == firstUIStateId)
+    }
+
+    @Test("property change on one node leaves siblings' instance untouched")
+    func singleNodeChange() throws {
+        let vm = makeViewModel()
+        try vm.processMessage(makeCreateSurface())
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .array([.string("a"), .string("b")])
+                ]),
+                RawComponent(id: "a", component: "Text", properties: ["text": .string("A")]),
+                RawComponent(id: "b", component: "Text", properties: ["text": .string("B")]),
+            ]
+        )))
+        let root = try #require(vm.componentTree)
+        let childAInstanceBefore = root.children[0].instance
+        let childBInstanceBefore = root.children[1].instance
+
+        // Change only child A's text.
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .array([.string("a"), .string("b")])
+                ]),
+                RawComponent(id: "a", component: "Text", properties: ["text": .string("A-new")]),
+                RawComponent(id: "b", component: "Text", properties: ["text": .string("B")]),
+            ]
+        )))
+
+        #expect(vm.componentTree === root)
+        #expect(root.children[0].instance != childAInstanceBefore)
+        #expect(root.children[1].instance == childBInstanceBefore)
+    }
+
+    @Test("same-id child type change replaces that child node")
+    func sameIdChildTypeChangeReplacesChild() throws {
+        let vm = makeViewModel()
+        try vm.processMessage(makeCreateSurface())
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .array([.string("child")])
+                ]),
+                RawComponent(id: "child", component: "Text", properties: ["text": .string("A")]),
+            ]
+        )))
+        let root = try #require(vm.componentTree)
+        let oldChild = try #require(root.children.first)
+
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .array([.string("child")])
+                ]),
+                RawComponent(id: "child", component: "Column", properties: [
+                    "children": .array([])
+                ]),
+            ]
+        )))
+
+        let newChild = try #require(root.children.first)
+        #expect(vm.componentTree === root)
+        #expect(newChild !== oldChild)
+        #expect(newChild.type == .Column)
+    }
+
+    @Test("root id changing forces full tree replacement")
+    func rootReplacementOnIdChange() throws {
+        let vm = makeViewModel()
+        try vm.processMessage(makeCreateSurface())
+        try vm.processMessage(makeTextComponent(id: "root", text: "Hello"))
+        let oldRoot = try #require(vm.componentTree)
+
+        // Replace root with a different baseComponentId (still has id "root" so it
+        // builds, but switch the component type to force `reconcileNode` to bail).
+        try vm.processMessage(.updateComponents(UpdateComponentsPayload(
+            surfaceId: "s1",
+            components: [
+                RawComponent(id: "root", component: "Column", properties: [
+                    "children": .array([])
+                ]),
+            ]
+        )))
+        let newRoot = try #require(vm.componentTree)
+        #expect(newRoot !== oldRoot)
+        #expect(newRoot.type == .Column)
+    }
+}
+
+/// Sendable wrapper for observation testing.
+private final class ObservationFlag: @unchecked Sendable {
+    var triggered = false
 }

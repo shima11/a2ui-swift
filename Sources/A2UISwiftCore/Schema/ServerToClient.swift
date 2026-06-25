@@ -41,11 +41,12 @@ public enum A2uiMessage: Codable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
         let version = try container.decode(String.self, forKey: .version)
-        guard version == "v0.9" else {
+        // v0.9.1 is a backward-compatible refinement of v0.9; schemas accept both.
+        guard version == "v0.9" || version == "v0.9.1" else {
             throw DecodingError.dataCorruptedError(
                 forKey: .version,
                 in: container,
-                debugDescription: #"A2UI message version must be "v0.9"."#
+                debugDescription: #"A2UI message version must be "v0.9" or "v0.9.1"."#
             )
         }
 
@@ -157,7 +158,7 @@ public struct DeleteSurfacePayload: Codable, Sendable {
 /// The fixed fields `id`, `component`, `weight`, and `accessibility` are extracted;
 /// all remaining keys become `properties`.
 /// Mirrors WebCore `AnyComponentSchema`.
-public struct RawComponent: Sendable {
+public struct RawComponent: Sendable, Equatable {
     public var id: String
     public var component: String
     public var weight: Double?
