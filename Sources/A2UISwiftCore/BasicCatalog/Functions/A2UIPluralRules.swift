@@ -12,33 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import _FoundationICU
+import Foundation
 
-/// ICU-backed plural selection; mirrors `Intl.PluralRules(locale).select(n)`.
+/// Cardinal plural selection using the operating system's ICU/CLDR rules.
+/// Rule versions and numeric boundaries follow Foundation, not a pinned Intl release.
 struct A2UIPluralRules {
-    private var localeIdentifier: String
+    private static let categoryTemplate = Bundle.module.localizedString(
+        forKey: "category", value: nil, table: "PluralCategories")
+    private let locale: Locale
 
     init(localeIdentifier: String) {
-        self.localeIdentifier = localeIdentifier
+        locale = Locale(identifier: localeIdentifier)
     }
 
     func select(_ number: Double) -> String {
-        localeIdentifier.withCString { cLocale in
-            var status = U_ZERO_ERROR
-            guard let rules = uplrules_openForType(cLocale, UPLURAL_TYPE_CARDINAL, &status),
-                  status == U_ZERO_ERROR
-            else {
-                return nil
-            }
-            defer { uplrules_close(rules) }
-
-            var buffer = [UInt16](repeating: 0, count: 32)
-            status = U_ZERO_ERROR
-            let length = uplrules_select(rules, number, &buffer, Int32(buffer.count), &status)
-            guard status == U_ZERO_ERROR, length > 0, Int(length) < buffer.count else {
-                return nil
-            }
-            return String(utf16CodeUnits: buffer, count: Int(length))
-        } ?? "other"
+        guard number.isFinite else { return "other" }
+        return String(
+            format: Self.categoryTemplate, locale: locale, arguments: [abs(number)])
     }
 }

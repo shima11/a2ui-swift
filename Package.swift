@@ -52,11 +52,9 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // Upstream SwiftPM manifest is named `FoundationICU`; SPM package id from this URL is `swift-foundation-icu`.
-        // Exported library product is `_FoundationICU` only.
         .package(
-            url: "https://github.com/swiftlang/swift-foundation-icu.git",
-            revision: "swift-6.3.1-RELEASE"
+            url: "https://github.com/ajevans99/swift-json-schema.git",
+            .upToNextMinor(from: "0.13.1")
         ),
     ],
     targets: [
@@ -71,9 +69,11 @@ let package = Package(
         .target(
             name: "A2UISwiftCore",
             dependencies: [
-                .product(name: "_FoundationICU", package: "swift-foundation-icu"),
+                .product(name: "JSONSchema", package: "swift-json-schema"),
+                .product(name: "OrderedJSON", package: "swift-json-schema"),
             ],
-            path: "Sources/A2UISwiftCore"
+            path: "Sources/A2UISwiftCore",
+            resources: [.process("Resources")]
         ),
         .target(
             name: "A2UISwiftUI",
@@ -114,7 +114,10 @@ let package = Package(
         ),
         .testTarget(
             name: "A2UISwiftCoreTests",
-            dependencies: ["A2UISwiftCore"],
+            dependencies: [
+                "A2UISwiftCore",
+                .product(name: "JSONSchemaBuilder", package: "swift-json-schema"),
+            ],
             path: "Tests/A2UISwiftCoreTests"
         ),
         .testTarget(
